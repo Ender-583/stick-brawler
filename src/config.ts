@@ -24,7 +24,7 @@ export const FIGHTER = {
   punchCooldownMs: 260,
   punchRange: 58,
   punchDamage: 8,
-  punchKnockback: 0.045,
+  punchKnockback: 0.016,
   throwSpeed: 14,
   uprightGain: 0.22,
   uprightDamp: 0.1,
