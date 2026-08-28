@@ -18,7 +18,7 @@ export const FIGHTER = {
   airMoveForce: 0.0015,
   maxWalkSpeed: 7.2,
   maxAirSpeed: 6.2,
-  jumpSpeed: 11.4,
+  jumpSpeed: 19.7,
   coyoteMs: 90,
   stunMs: 280,
   punchCooldownMs: 260,
