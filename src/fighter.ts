@@ -108,8 +108,11 @@ export class Fighter {
     this.alive = false;
     this.deadAt = now;
     for (const c of this.constraints) {
-      c.stiffness = 0.35;
-      c.damping = 0.02;
+      c.stiffness = 0.28;
+      c.damping = 0.01;
+    }
+    for (const b of this.allBodies()) {
+      b.frictionAir = 0.02;
     }
   }
 
@@ -157,6 +160,7 @@ export class Fighter {
 
     if (!this.canControl(now)) {
       this.actionHeld = actionDown;
+      this.holdStance(now, 0);
       return { jump: false, action: false, throwWeapon: false, move: 0 };
     }
 
@@ -175,9 +179,7 @@ export class Fighter {
       });
     }
 
-    keepUpright(this.torso);
-    poseLegs(this, now, move);
-    poseArms(this, now);
+    this.holdStance(now, move);
 
     let jump = false;
     if (jumpPressed && now <= this.coyote) {
@@ -199,6 +201,52 @@ export class Fighter {
 
     this.actionHeld = actionDown;
     return { jump, action, throwWeapon, move };
+  }
+
+  holdStance(now: number, move = 0): void {
+    if (!this.alive) return;
+    const stunned = now < this.stunnedUntil;
+    const k = stunned ? 0.22 : 0.55;
+
+    lerpAngle(this.parts.torso, 0, k);
+    lerpAngle(this.parts.head, 0, k * 0.9);
+
+    const walking = this.grounded && move !== 0;
+    const gait = walking ? Math.sin(now / 120) * 0.62 : this.grounded ? Math.sin(now / 380) * 0.06 : 0.18;
+    const rear = walking ? -gait * 0.35 : 0;
+    lerpAngle(this.parts.upperLegL, gait, k);
+    lerpAngle(this.parts.lowerLegL, rear, k);
+    lerpAngle(this.parts.upperLegR, -gait, k);
+    lerpAngle(this.parts.lowerLegR, walking ? gait * 0.35 : 0, k);
+
+    if (now < this.punchUntil) {
+      const leadUpper = this.facing >= 0 ? this.parts.upperArmR : this.parts.upperArmL;
+      const leadLower = this.facing >= 0 ? this.parts.lowerArmR : this.parts.lowerArmL;
+      const backUpper = this.facing >= 0 ? this.parts.upperArmL : this.parts.upperArmR;
+      const backLower = this.facing >= 0 ? this.parts.lowerArmL : this.parts.lowerArmR;
+      lerpAngle(leadUpper, this.facing * 1.35, 0.7);
+      lerpAngle(leadLower, this.facing * 0.35, 0.7);
+      lerpAngle(backUpper, -this.facing * 0.45, k);
+      lerpAngle(backLower, -this.facing * 0.15, k);
+      return;
+    }
+
+    const idle = Math.sin(now / 240) * 0.05;
+    const gun = this.weapon !== "fists" && !WEAPON_DEFS[this.weapon].melee;
+    if (gun) {
+      const leadUpper = this.facing >= 0 ? this.parts.upperArmR : this.parts.upperArmL;
+      const leadLower = this.facing >= 0 ? this.parts.lowerArmR : this.parts.lowerArmL;
+      lerpAngle(leadUpper, this.facing * 1.15, k);
+      lerpAngle(leadLower, this.facing * 0.2, k);
+      lerpAngle(this.facing >= 0 ? this.parts.upperArmL : this.parts.upperArmR, -this.facing * 0.25 + idle, k);
+      lerpAngle(this.facing >= 0 ? this.parts.lowerArmL : this.parts.lowerArmR, 0.15, k);
+      return;
+    }
+
+    lerpAngle(this.parts.upperArmL, -0.28 + idle, k);
+    lerpAngle(this.parts.lowerArmL, 0.18, k);
+    lerpAngle(this.parts.upperArmR, 0.28 - idle, k);
+    lerpAngle(this.parts.lowerArmR, -0.18, k);
   }
 
   draw(ctx: CanvasRenderingContext2D, now: number): void {
@@ -267,7 +315,7 @@ function buildRagdoll(x: number, y: number, id: number): {
   const opts = (part: PartName, extra?: Matter.IChamferableBodyDefinition): Matter.IChamferableBodyDefinition => ({
     collisionFilter: { group },
     friction: 0.75,
-    frictionAir: 0.04,
+    frictionAir: 0.08,
     restitution: 0.12,
     density: 0.0022,
     label: `p${id}-${part}`,
@@ -317,7 +365,7 @@ function buildRagdoll(x: number, y: number, id: number): {
     b: Matter.Body,
     pa: Matter.Vector,
     pb: Matter.Vector,
-    stiffness = 0.86,
+    stiffness = 0.94,
   ): Matter.Constraint =>
     Matter.Constraint.create({
       bodyA: a,
@@ -347,32 +395,12 @@ function buildRagdoll(x: number, y: number, id: number): {
   return { composite, parts, constraints };
 }
 
-function keepUpright(torso: Matter.Body): void {
-  const err = torso.angle;
-  const av = torso.angularVelocity;
-  Matter.Body.setAngularVelocity(torso, av - err * FIGHTER.uprightGain - av * FIGHTER.uprightDamp);
-  if (Math.abs(torso.angle) > 0.9) {
-    Matter.Body.setAngle(torso, Math.sign(torso.angle) * 0.9);
-  }
-}
-
-function poseLegs(f: Fighter, now: number, move: number): void {
-  if (!f.grounded) return;
-  const t = now / 90;
-  const swing = move === 0 ? 0.04 : 0.22;
-  Matter.Body.setAngularVelocity(f.parts.upperLegL, Math.sin(t) * swing);
-  Matter.Body.setAngularVelocity(f.parts.upperLegR, Math.sin(t + Math.PI) * swing);
-}
-
-function poseArms(f: Fighter, now: number): void {
-  if (now < f.punchUntil) {
-    const punchArm = f.facing >= 0 ? f.parts.upperArmR : f.parts.upperArmL;
-    Matter.Body.setAngularVelocity(punchArm, f.facing * 0.55);
-    return;
-  }
-  const idle = Math.sin(now / 220) * 0.03;
-  Matter.Body.setAngularVelocity(f.parts.upperArmL, idle);
-  Matter.Body.setAngularVelocity(f.parts.upperArmR, -idle);
+function lerpAngle(body: Matter.Body, target: number, k: number): void {
+  let delta = target - body.angle;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  Matter.Body.setAngle(body, body.angle + delta * k);
+  Matter.Body.setAngularVelocity(body, body.angularVelocity * (1 - k));
 }
 
 function line(ctx: CanvasRenderingContext2D, a: Matter.Vector, b: Matter.Vector): void {

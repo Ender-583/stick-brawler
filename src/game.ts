@@ -160,6 +160,15 @@ export class Game {
 
   private stepPhysics(dt: number): void {
     this.accumulator = stepEngine(this.engine, this.accumulator, dt);
+    for (const f of this.fighters) {
+      if (!f.alive) continue;
+      const left = this.input.isDown(f.binds.left);
+      const right = this.input.isDown(f.binds.right);
+      let move = 0;
+      if (left) move -= 1;
+      if (right) move += 1;
+      f.holdStance(this.now, f.canControl(this.now) ? move : 0);
+    }
   }
 
   private controlFighters(allowAction: boolean): void {
